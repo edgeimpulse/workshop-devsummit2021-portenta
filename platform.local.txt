@@ -1,0 +1,2 @@
+## Preprocess linker script
+recipe.hooks.linking.prelink.1.pattern="{compiler.path}{compiler.c.elf.cmd}" -E -P -x c {build.extra_ldflags} "{build.variant.path}/{build.ldscript}" -o {build.path}/{build.ldscript}

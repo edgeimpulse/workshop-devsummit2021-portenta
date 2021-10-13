@@ -22,6 +22,7 @@
 
 #include "ei_camera.h"
 #include "ei_main.h"
+#include "edge-impulse-sdk/dsp/image/image.hpp"
 #ifdef EI_CAMERA_FRAME_BUFFER_SDRAM
 #include "SDRAM.h"
 #endif
@@ -51,9 +52,6 @@ static uint8_t *ei_camera_capture_out = NULL;
 static bool prepare_snapshot(size_t width, size_t height, bool use_max_baudrate);
 static bool take_snapshot(size_t width, size_t height, bool print_oks);
 static void finish_snapshot();
-
-void resizeImage(int srcWidth, int srcHeight, uint8_t *srcImage, int dstWidth, int dstHeight, uint8_t *dstImage, int iBpp);
-void cropImage(int srcWidth, int srcHeight, uint8_t *srcImage, int startX, int startY, int dstWidth, int dstHeight, uint8_t *dstImage, int iBpp);
 
 /**
  * @brief      Convert monochrome data to rgb values
@@ -124,6 +122,28 @@ static int calculate_resize_dimensions(uint32_t out_width, uint32_t out_height, 
      ei_printf("Heap size: %lu / %lu bytes (max: %lu)\r\n", heap_stats.current_size, heap_stats.reserved_size, heap_stats.max_size);
  }
 
+#ifdef EI_CAMERA_FRAME_BUFFER_SDRAM
+static HAL_StatusTypeDef FMC_SDRAM_Clock_Config(void)
+{
+  RCC_PeriphCLKInitTypeDef  RCC_PeriphCLKInitStruct;
+
+  /* PLL2_VCO Input = HSE_VALUE/PLL2_M = 5 Mhz */
+  /* PLL2_VCO Output = PLL2_VCO Input * PLL_N = 800 Mhz */
+  /* FMC Kernel Clock = PLL2_VCO Output/PLL_R = 800/4 = 200 Mhz */
+  RCC_PeriphCLKInitStruct.PeriphClockSelection = RCC_PERIPHCLK_FMC;
+  RCC_PeriphCLKInitStruct.FmcClockSelection = RCC_FMCCLKSOURCE_PLL2;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2RGE = RCC_PLL1VCIRANGE_2;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2M = 5;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2N = 160;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2FRACN = 0;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2P = 2;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2R = 4;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2Q = 4;
+  RCC_PeriphCLKInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
+  return HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphCLKInitStruct);
+}
+#endif
+
 /**
  * @brief   Setup image sensor & start streaming
  *
@@ -138,21 +158,34 @@ bool ei_camera_init(void) {
             ei_printf("ERR: Failed to initialise camera\r\n");
             return false;
         }
+
+    #ifdef EI_CAMERA_FRAME_BUFFER_SDRAM
+        ei_camera_frame_mem = (uint8_t *) SDRAM.malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS + 32 /*alignment*/);
+        if(ei_camera_frame_mem == NULL) {
+            ei_printf("failed to create ei_camera_frame_mem\r\n");
+            return false;
+        }
+        ei_camera_frame_buffer = (uint8_t *)ALIGN_PTR((uintptr_t)ei_camera_frame_mem, 32);
+    #endif
+
         is_ll_initialised = true;
     }
 
     // initialize frame buffer
-#if defined(EI_CAMERA_FRAME_BUFFER_SDRAM) || defined(EI_CAMERA_FRAME_BUFFER_HEAP)
-#ifdef EI_CAMERA_FRAME_BUFFER_SDRAM
-    ei_camera_frame_mem = (uint8_t *) SDRAM.malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS + 32 /*alignment*/);
-#else
+#if defined(EI_CAMERA_FRAME_BUFFER_HEAP)
     ei_camera_frame_mem = (uint8_t *) ei_malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS + 32 /*alignment*/);
-#endif
     if(ei_camera_frame_mem == NULL) {
         ei_printf("failed to create ei_camera_frame_mem\r\n");
         return false;
     }
     ei_camera_frame_buffer = (uint8_t *)ALIGN_PTR((uintptr_t)ei_camera_frame_mem, 32);
+#endif
+
+#ifdef EI_CAMERA_FRAME_BUFFER_SDRAM
+    // Arduino-core mbed@2.5.2 patch -
+    //      PDM and SDRAM share the same PLL therefore this should be
+    //      called to reconfigure the clock in the event that PDM was used prior.
+    FMC_SDRAM_Clock_Config();
 #endif
 
     is_initialised = true;
@@ -165,12 +198,8 @@ bool ei_camera_init(void) {
  */
 void ei_camera_deinit(void) {
 
-#if defined(EI_CAMERA_FRAME_BUFFER_SDRAM) || defined(EI_CAMERA_FRAME_BUFFER_HEAP)
-#ifdef EI_CAMERA_FRAME_BUFFER_SDRAM
-    SDRAM.free(ei_camera_frame_mem);
-#else
+#if defined(EI_CAMERA_FRAME_BUFFER_HEAP)
     ei_free(ei_camera_frame_mem);
-#endif
     ei_camera_frame_mem = NULL;
     ei_camera_frame_buffer = NULL;
 #endif
@@ -226,12 +255,19 @@ bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf
     ei_camera_capture_out = ei_camera_frame_buffer;
 
     if (do_resize) {
+
+        // if only resizing then and out_buf provided then use itinstead.
+        if (out_buf && !do_crop) ei_camera_capture_out = out_buf;
+
         //ei_printf("resize cols: %d, rows: %d\r\n", resize_col_sz,resize_row_sz);
-        resizeImage(EI_CAMERA_RAW_FRAME_BUFFER_COLS, EI_CAMERA_RAW_FRAME_BUFFER_ROWS,
-                    ei_camera_frame_buffer,
-                    resize_col_sz, resize_row_sz,
-                    ei_camera_frame_buffer,
-                    8);
+        ei::image::processing::resize_image(
+            ei_camera_frame_buffer,
+            EI_CAMERA_RAW_FRAME_BUFFER_COLS,
+            EI_CAMERA_RAW_FRAME_BUFFER_ROWS,
+            ei_camera_capture_out,
+            resize_col_sz,
+            resize_row_sz,
+            1); // bytes per pixel
     }
 
     if (do_crop) {
@@ -244,15 +280,20 @@ bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf
         crop_col_sz = img_width;
         crop_row_sz = img_height;
 
+        // if (also) cropping and out_buf provided then use it instead.
         if (out_buf) ei_camera_capture_out = out_buf;
 
         //ei_printf("crop cols: %d, rows: %d\r\n", crop_col_sz,crop_row_sz);
-        cropImage(resize_col_sz, resize_row_sz,
-                  ei_camera_frame_buffer,
-                  crop_col_start, crop_row_start,
-                  crop_col_sz, crop_row_sz,
-                  ei_camera_capture_out,
-                  8);
+        ei::image::processing::cropImage(
+            ei_camera_frame_buffer,
+            resize_col_sz,
+            resize_row_sz,
+            crop_col_start,
+            crop_row_start,
+            ei_camera_capture_out,
+            crop_col_sz,
+            crop_row_sz,
+            8); // bits per pixel
     }
 
     EiDevice.set_state(eiStateIdle);
@@ -511,7 +552,7 @@ static bool prepare_snapshot(size_t width, size_t height, bool use_max_baudrate)
 }
 
 static void finish_snapshot() {
-    /* noop */
+    ei_camera_deinit();
 }
 
 int ei_camera_cutout_get_data(size_t offset, size_t length, float *out_ptr) {
@@ -540,198 +581,3 @@ int ei_camera_cutout_get_data(size_t offset, size_t length, float *out_ptr) {
     // and done!
     return 0;
 }
-
-// This include file works in the Arduino environment
-// to define the Cortex-M intrinsics
-#ifdef __ARM_FEATURE_SIMD32
-#include <device.h>
-#endif
-// This needs to be < 16 or it won't fit. Cortex-M4 only has SIMD for signed multiplies
-#define FRAC_BITS 14
-#define FRAC_VAL (1<<FRAC_BITS)
-#define FRAC_MASK (FRAC_VAL - 1)
-//
-// Resize
-//
-// Assumes that the destination buffer is dword-aligned
-// Can be used to resize the image smaller or larger
-// If resizing much smaller than 1/3 size, then a more rubust algorithm should average all of the pixels
-// This algorithm uses bilinear interpolation - averages a 2x2 region to generate each new pixel
-//
-// Optimized for 32-bit MCUs
-// supports 8 and 16-bit pixels
-void resizeImage(int srcWidth, int srcHeight, uint8_t *srcImage, int dstWidth, int dstHeight, uint8_t *dstImage, int iBpp)
-{
-  uint32_t src_x_accum, src_y_accum; // accumulators and fractions for scaling the image
-  uint32_t x_frac, nx_frac, y_frac, ny_frac;
-  int x, y, ty, tx;
-
-  if (iBpp != 8 && iBpp != 16)
-     return;
-  src_y_accum = FRAC_VAL/2; // start at 1/2 pixel in to account for integer downsampling which might miss pixels
-  const uint32_t src_x_frac = (srcWidth * FRAC_VAL) / dstWidth;
-  const uint32_t src_y_frac = (srcHeight * FRAC_VAL) / dstHeight;
-  const uint32_t r_mask = 0xf800f800;
-  const uint32_t g_mask = 0x07e007e0;
-  const uint32_t b_mask = 0x001f001f;
-  uint8_t *s, *d;
-  uint16_t *s16, *d16;
-  uint32_t x_frac2, y_frac2; // for 16-bit SIMD
-  for (y=0; y < dstHeight; y++) {
-    ty = src_y_accum >> FRAC_BITS; // src y
-    y_frac = src_y_accum & FRAC_MASK;
-    src_y_accum += src_y_frac;
-    ny_frac = FRAC_VAL - y_frac; // y fraction and 1.0 - y fraction
-    y_frac2 = ny_frac | (y_frac << 16); // for M4/M4 SIMD
-    s = &srcImage[ty * srcWidth];
-    s16 = (uint16_t *)&srcImage[ty * srcWidth * 2];
-    d = &dstImage[y * dstWidth];
-    d16 = (uint16_t *)&dstImage[y * dstWidth * 2];
-    src_x_accum = FRAC_VAL/2; // start at 1/2 pixel in to account for integer downsampling which might miss pixels
-    if (iBpp == 8) {
-      for (x=0; x < dstWidth; x++) {
-        uint32_t tx, p00,p01,p10,p11;
-        tx = src_x_accum >> FRAC_BITS;
-        x_frac = src_x_accum & FRAC_MASK;
-        nx_frac = FRAC_VAL - x_frac; // x fraction and 1.0 - x fraction
-        x_frac2 = nx_frac | (x_frac << 16);
-        src_x_accum += src_x_frac;
-        p00 = s[tx]; p10 = s[tx+1];
-        p01 = s[tx+srcWidth]; p11 = s[tx+srcWidth+1];
-#ifdef __ARM_FEATURE_SIMD32
-        p00 = __SMLAD(p00 | (p10<<16), x_frac2, FRAC_VAL/2) >> FRAC_BITS; // top line
-        p01 = __SMLAD(p01 | (p11<<16), x_frac2, FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        p00 = __SMLAD(p00 | (p01<<16), y_frac2, FRAC_VAL/2) >> FRAC_BITS; // combine
-#else // generic C code
-        p00 = ((p00 * nx_frac) + (p10 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // top line
-        p01 = ((p01 * nx_frac) + (p11 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        p00 = ((p00 * ny_frac) + (p01 * y_frac) + FRAC_VAL/2) >> FRAC_BITS; // combine top + bottom
-#endif // Cortex-M4/M7
-        *d++ = (uint8_t)p00; // store new pixel
-      } // for x
-    } // 8-bpp
-    else
-    { // RGB565
-      for (x=0; x < dstWidth; x++) {
-        uint32_t tx, p00,p01,p10,p11;
-        uint32_t r00, r01, r10, r11, g00, g01, g10, g11, b00, b01, b10, b11;
-        tx = src_x_accum >> FRAC_BITS;
-        x_frac = src_x_accum & FRAC_MASK;
-        nx_frac = FRAC_VAL - x_frac; // x fraction and 1.0 - x fraction
-        x_frac2 = nx_frac | (x_frac << 16);
-        src_x_accum += src_x_frac;
-        p00 = __builtin_bswap16(s16[tx]); p10 = __builtin_bswap16(s16[tx+1]);
-        p01 = __builtin_bswap16(s16[tx+srcWidth]); p11 = __builtin_bswap16(s16[tx+srcWidth+1]);
-#ifdef __ARM_FEATURE_SIMD32
-        {
-        p00 |= (p10 << 16);
-        p01 |= (p11 << 16);
-        r00 = (p00 & r_mask) >> 1; g00 = p00 & g_mask; b00 = p00 & b_mask;
-        r01 = (p01 & r_mask) >> 1; g01 = p01 & g_mask; b01 = p01 & b_mask;
-        r00 = __SMLAD(r00, x_frac2, FRAC_VAL/2) >> FRAC_BITS; // top line
-        r01 = __SMLAD(r01, x_frac2, FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        r00 = __SMLAD(r00 | (r01<<16), y_frac2, FRAC_VAL/2) >> FRAC_BITS; // combine
-        g00 = __SMLAD(g00, x_frac2, FRAC_VAL/2) >> FRAC_BITS; // top line
-        g01 = __SMLAD(g01, x_frac2, FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        g00 = __SMLAD(g00 | (g01<<16), y_frac2, FRAC_VAL/2) >> FRAC_BITS; // combine
-        b00 = __SMLAD(b00, x_frac2, FRAC_VAL/2) >> FRAC_BITS; // top line
-        b01 = __SMLAD(b01, x_frac2, FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        b00 = __SMLAD(b00 | (b01<<16), y_frac2, FRAC_VAL/2) >> FRAC_BITS; // combine
-        }
-#else // generic C code
-        {
-        r00 = (p00 & r_mask) >> 1; g00 = p00 & g_mask; b00 = p00 & b_mask;
-        r10 = (p10 & r_mask) >> 1; g10 = p10 & g_mask; b10 = p10 & b_mask;
-        r01 = (p01 & r_mask) >> 1; g01 = p01 & g_mask; b01 = p01 & b_mask;
-        r11 = (p11 & r_mask) >> 1; g11 = p11 & g_mask; b11 = p11 & b_mask;
-        r00 = ((r00 * nx_frac) + (r10 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // top line
-        r01 = ((r01 * nx_frac) + (r11 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        r00 = ((r00 * ny_frac) + (r01 * y_frac) + FRAC_VAL/2) >> FRAC_BITS; // combine top + bottom
-        g00 = ((g00 * nx_frac) + (g10 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // top line
-        g01 = ((g01 * nx_frac) + (g11 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        g00 = ((g00 * ny_frac) + (g01 * y_frac) + FRAC_VAL/2) >> FRAC_BITS; // combine top + bottom
-        b00 = ((b00 * nx_frac) + (b10 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // top line
-        b01 = ((b01 * nx_frac) + (b11 * x_frac) + FRAC_VAL/2) >> FRAC_BITS; // bottom line
-        b00 = ((b00 * ny_frac) + (b01 * y_frac) + FRAC_VAL/2) >> FRAC_BITS; // combine top + bottom
-        }
-#endif // Cortex-M4/M7
-        r00 = (r00 << 1) & r_mask;
-        g00 = g00 & g_mask;
-        b00 = b00 & b_mask;
-        p00 = (r00 | g00 | b00); // re-combine color components
-        *d16++ = (uint16_t)__builtin_bswap16(p00); // store new pixel
-      } // for x
-    } // 16-bpp
-  } // for y
-} /* resizeImage() */
-//
-// Crop
-//
-// Assumes that the destination buffer is dword-aligned
-// optimized for 32-bit MCUs
-// Supports 8 and 16-bit pixels
-//
-void cropImage(int srcWidth, int srcHeight, uint8_t *srcImage, int startX, int startY, int dstWidth, int dstHeight, uint8_t *dstImage, int iBpp)
-{
-    uint32_t *s32, *d32;
-    int x, y;
-
-    if (startX < 0 || startX >= srcWidth || startY < 0 || startY >= srcHeight || (startX + dstWidth) > srcWidth || (startY + dstHeight) > srcHeight)
-       return; // invalid parameters
-    if (iBpp != 8 && iBpp != 16)
-       return;
-
-    if (iBpp == 8) {
-      uint8_t *s, *d;
-      for (y=0; y<dstHeight; y++) {
-        s = &srcImage[srcWidth * (y + startY) + startX];
-        d = &dstImage[(dstWidth * y)];
-        x = 0;
-        if ((intptr_t)s & 3 || (intptr_t)d & 3) { // either src or dst pointer is not aligned
-          for (; x<dstWidth; x++) {
-            *d++ = *s++; // have to do it byte-by-byte
-          }
-        } else {
-          // move 4 bytes at a time if aligned or alignment not enforced
-          s32 = (uint32_t *)s;
-          d32 = (uint32_t *)d;
-          for (; x<dstWidth-3; x+= 4) {
-            *d32++ = *s32++;
-          }
-          // any remaining stragglers?
-          s = (uint8_t *)s32;
-          d = (uint8_t *)d32;
-          for (; x<dstWidth; x++) {
-            *d++ = *s++;
-          }
-        }
-      } // for y
-    } // 8-bpp
-    else
-    {
-      uint16_t *s, *d;
-      for (y=0; y<dstHeight; y++) {
-        s = (uint16_t *)&srcImage[2 * srcWidth * (y + startY) + startX * 2];
-        d = (uint16_t *)&dstImage[(dstWidth * y * 2)];
-        x = 0;
-        if ((intptr_t)s & 2 || (intptr_t)d & 2) { // either src or dst pointer is not aligned
-          for (; x<dstWidth; x++) {
-            *d++ = *s++; // have to do it 16-bits at a time
-          }
-        } else {
-          // move 4 bytes at a time if aligned or alignment no enforced
-          s32 = (uint32_t *)s;
-          d32 = (uint32_t *)d;
-          for (; x<dstWidth-1; x+= 2) { // we can move 2 pixels at a time
-            *d32++ = *s32++;
-          }
-          // any remaining stragglers?
-          s = (uint16_t *)s32;
-          d = (uint16_t *)d32;
-          for (; x<dstWidth; x++) {
-            *d++ = *s++;
-          }
-        }
-      } // for y
-    } // 16-bpp case
-} /* cropImage() */

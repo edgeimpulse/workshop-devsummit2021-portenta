@@ -201,7 +201,7 @@ void run_nn(bool debug) {
             ei_dsp_config_image_t config = *((ei_dsp_config_image_t*)block.config);
             int16_t channel_count = strcmp(config.channels, "Grayscale") == 0 ? 1 : 3;
             if (channel_count == 3) {
-                ei_printf("WARN: You've deployed a color model, but the "TARGET" only has a monochrome image sensor. Set your DSP block to 'Grayscale' for best performance.\r\n");
+                ei_printf("WARN: You've deployed a color model, but the Arduino Portenta H7 only has a monochrome image sensor. Set your DSP block to 'Grayscale' for best performance.\r\n");
                 break; // only print this once
             }
         }

@@ -25,8 +25,6 @@
 
 #include "mbed.h"
 
-#define TARGET "PORTENTA_H7"
-
 using namespace rtos;
 using namespace events;
 

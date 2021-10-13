@@ -45,7 +45,7 @@
 #define EI_CLASSIFIER_PROJECT_ID                 49062
 #define EI_CLASSIFIER_PROJECT_OWNER              "Raul James"
 #define EI_CLASSIFIER_PROJECT_NAME               "Tutorial: Adding sight to your sensors (smaller)"
-#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     15
+#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     16
 #define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        9216
 #define EI_CLASSIFIER_RAW_SAMPLE_COUNT           9216
 #define EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME      1

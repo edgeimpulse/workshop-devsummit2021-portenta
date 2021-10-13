@@ -58,7 +58,7 @@ To flash the firmware, double-click on the flashing script for your Operating Sy
 
 ### With Arduino IDE
 
-1. Open the `workshop-devsummit2021-portenta.ino`, select the **Arduino Portenta H7 (M7 core)** board and the Flash Split **1 MB M7 +  1 MB M4**.
+1. Open the `workshop-devsummit2021-portenta.ino`, select the **Arduino Portenta H7 (M7 core)** board and the Flash Split **2 MB M7 + M4 in SDRAM**.
 1. Build and flash the application using the **Upload** button.
 
 ## Using your own exported Arduino library

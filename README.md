@@ -11,22 +11,19 @@ Edge Impulse enables developers to create the next generation of intelligent dev
 
 ### Tools
 
-macOS and Linux users can use either the Arduino CLI and IDE to compile the firmware.
-Windows users will need the Arduino IDE.
-
 #### Edge Impulse CLI
 
 [Follow the instructions](https://docs.edgeimpulse.com/docs/cli-installation) to install the Edge Impulse CLI according to your Operating System.
 
-#### Arduino CLI (macOS/Linux only)
+#### Arduino CLI
 
-Use following link for download and installation procedure:
-
-* [Arduino CLI](https://arduino.github.io/arduino-cli/installation/).
+Use following link for download and installation procedure: [Arduino CLI](https://arduino.github.io/arduino-cli/installation/).
 
 The Edge Impulse firmware depends on some libraries and the Mbed core for Arduino. These will be automatically installed if you don't have them yet.
 
-#### Arduino IDE (Windows/macOS/Linux)
+#### Arduino IDE (Windows users)
+
+_Installing Arduino IDE is a requirement only for Windows users. macOS and Linux users can use either the Arduino CLI or IDE to build the application._
 
 1. Download and install the [Arduino IDE](https://www.arduino.cc/en/software) for your Operating System.
 1. In Tools -> Board -> Boards Manager, search for `portenta` and install the **Arduino Mbed OS Portenta Boards v2.5.2**.
@@ -34,7 +31,16 @@ The Edge Impulse firmware depends on some libraries and the Mbed core for Arduin
 1.  Copy the `boards.local.txt` and `platform.local.txt` files into the Arduino Mbed Portenta directory, for instance:
 `/Users/aureleq/Library/Arduino15/packages/arduino/hardware/mbed_portenta/2.5.2`. The platform.local.txt should not be required in the next Arduino Mbed Core release (more details [here](https://github.com/arduino/ArduinoCore-mbed/pull/333)).
 
-## Building the application
+
+## Flashing the pre-compiled Arduino firmware
+
+The precompiled firmware enable users to collect data directly from the Edge Impulse Studio and run a default image classification model.
+
+First, clone or download this repository.
+
+To flash the firmware, double-click on the flashing script for your Operating System in the [flashing-scripts folder](flashing-scripts/).
+
+## Building the firmware from source code
 
 ### With Arduino CLI
 

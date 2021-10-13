@@ -1,4 +1,4 @@
-*.bin
-*.hex
-*.map
-*.elf
+workshop*.bin
+workshop*.hex
+workshop*.map
+workshop*.elf

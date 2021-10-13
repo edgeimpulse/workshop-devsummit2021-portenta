@@ -14,6 +14,10 @@ Edge Impulse enables developers to create the next generation of intelligent dev
 macOS and Linux users can use either the Arduino CLI and IDE to compile the firmware.
 Windows users will need the Arduino IDE.
 
+#### Edge Impulse CLI
+
+[Follow the instructions](https://docs.edgeimpulse.com/docs/cli-installation) to install the Edge Impulse CLI according to your Operating System.
+
 #### Arduino CLI (macOS/Linux only)
 
 Use following link for download and installation procedure:
@@ -28,7 +32,7 @@ The Edge Impulse firmware depends on some libraries and the Mbed core for Arduin
 1. In Tools -> Board -> Boards Manager, search for `portenta` and install the **Arduino Mbed OS Portenta Boards v2.5.2**.
 1. In Arduino Menu -> Preferences, check the location of the **preferences.txt** file (ie: /Users/aureleq/Library/Arduino15/).
 1.  Copy the `boards.local.txt` and `platform.local.txt` files into the Arduino Mbed Portenta directory, for instance:
-`/Users/aureleq/Library/Arduino15/packages/arduino/hardware/mbed_portenta/2.5.2`.
+`/Users/aureleq/Library/Arduino15/packages/arduino/hardware/mbed_portenta/2.5.2`. The platform.local.txt should not be required in the next Arduino Mbed Core release (more details [here](https://github.com/arduino/ArduinoCore-mbed/pull/333)).
 
 ## Building the application
 
@@ -51,16 +55,10 @@ The Edge Impulse firmware depends on some libraries and the Mbed core for Arduin
 1. Open the `workshop-devsummit2021-portenta.ino`, select the **Arduino Portenta H7 (M7 core)** board and the Flash Split **1 MB M7 +  1 MB M4**.
 1. Build and flash the application using the **Upload** button.
 
-## Using your own exported `C/C++` library from
+## Using your own exported Arduino library
 
-Extract the contents of the exported `C/C++` library and replace `edge-impulse-sdk`, `tflite-model` and `model-parameters` in the project
+Extract the contents of the exported **Arduino** library and replace `src/edge-impulse-sdk/`, `src/tflite-model/` and `src/model-parameters/` folders in the project
 accordingly. Next rebuild the application.
-
-## Known Issues
-
-- Image corruption after audio capture when frame buffer is placed in SDRAM (`EI_CAMERA_FRAME_BUFFER_SDRAM`).
-
-A simple work-around is to avoid image capture after audio capture, otherwise reset the board.
 
 ## Troubleshooting
 

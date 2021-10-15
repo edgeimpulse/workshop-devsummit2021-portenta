@@ -7,9 +7,14 @@ Edge Impulse enables developers to create the next generation of intelligent dev
 ### Hardware
 
 * [Arduino Portenta H7](https://store.arduino.cc/portenta-h7) development board.
-* [Arduino Portenta Vision Shield](https://store.arduino.cc/portenta-vision-shield).
+* [Arduino Portenta Vision Shield (LoRa or Ethernet)](https://store.arduino.cc/portenta-vision-shield).
 
 ### Tools
+
+First, sign up for a free account on [Edge Impulse](https://studio.edgeimpulse.com/signup).
+You can then rename or create a new project in the Studio.
+
+Then, install the Edge Impulse CLI, Arduino CLI, and the Arduino IDE (required for Windows users only, optional for macOS/Linux users):
 
 #### Edge Impulse CLI
 
@@ -21,7 +26,7 @@ Use following link for download and installation procedure: [Arduino CLI](https:
 
 The Edge Impulse firmware depends on some libraries and the Mbed core for Arduino. These will be automatically installed if you don't have them yet.
 
-#### Arduino IDE (Windows users)
+#### Arduino IDE (required for Windows users)
 
 _Installing Arduino IDE is a requirement only for Windows users. macOS and Linux users can use either the Arduino CLI or IDE to build the application._
 
@@ -40,9 +45,24 @@ First, clone or download this repository.
 
 To flash the firmware, double-click on the flashing script for your Operating System in the [flashing-scripts folder](flashing-scripts/).
 
+Once you have flashed the firmware, you can connect the board to your Edge Impulse project with:
+
+`
+$ edge-impulse-daemon
+`
+
+_(use your Edge Impulse credentials and select your project and board when prompted)_
+
 ## Building the firmware from source code
 
-### With Arduino CLI
+### Export the Arduino library
+
+Extract the contents of the exported **Arduino** library from your Edge Impulse project, and replace `src/edge-impulse-sdk/`, `src/tflite-model/` and `src/model-parameters/` folders in the project
+accordingly. Next rebuild the application.
+
+### Building the firmware
+
+#### With Arduino CLI
 
 1. Build the application:
 
@@ -56,15 +76,18 @@ To flash the firmware, double-click on the flashing script for your Operating Sy
     ./arduino-build.sh --flash
     ```
 
-### With Arduino IDE
+#### With Arduino IDE
 
 1. Open the `workshop-devsummit2021-portenta.ino`, select the **Arduino Portenta H7 (M7 core)** board and the Flash Split **2 MB M7 + M4 in SDRAM**.
 1. Build and flash the application using the **Upload** button.
 
-## Using your own exported Arduino library
+### Running the model
 
-Extract the contents of the exported **Arduino** library and replace `src/edge-impulse-sdk/`, `src/tflite-model/` and `src/model-parameters/` folders in the project
-accordingly. Next rebuild the application.
+Once the application has been flashed, you can run the inference on the target with:
+
+`
+edge-impulse-run-impulse
+`
 
 ## Troubleshooting
 

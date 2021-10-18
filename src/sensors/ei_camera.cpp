@@ -185,7 +185,7 @@ bool ei_camera_init(void) {
     // Arduino-core mbed@2.5.2 patch -
     //      PDM and SDRAM share the same PLL therefore this should be
     //      called to reconfigure the clock in the event that PDM was used prior.
-    FMC_SDRAM_Clock_Config();
+    //FMC_SDRAM_Clock_Config();
 #endif
 
     is_initialised = true;
